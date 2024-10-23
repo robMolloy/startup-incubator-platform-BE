@@ -1,0 +1,30 @@
+{
+  "name": "startup-incubator-platform-be",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "firebase:emulators-start": "node_modules/.bin/firebase --export-on-exit=\"./firestore/caches/$(date +%Y-%m-%d+%H:%M:%S)\" --import=\"./firestore/seeds/seed1\" emulators:start",
+    "firebase:emulators-start:offline": "node_modules/.bin/firebase --export-on-exit=\"./firestore/caches/$(date +%Y-%m-%d+%H:%M:%S)\" --import=\"./firestore/seeds/seed1\" --project demo-startup-incubator-platform emulators:start --only auth,firestore,storage,functions",
+    "firestore:deploy": "firebase deploy --only firestore:rules",
+    "functions:build:watch": "cd functions && npm run build:watch",
+    "tsc": "tsc --noemit --watch",
+    "test": "jest --watchAll --detectOpenHandles",
+    "dev1": "npm run firebase:emulators-start:offline",
+    "dev2": "npm run functions:build:watch",
+    "dev3": "npm run tsc",
+    "dev4": "npm run test"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.0",
+    "@types/jest": "^29.5.14",
+    "firebase-tools": "^13.22.1",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
+    "@types/uuid": "^10.0.0",
+    "uuid": "^10.0.0",
+    "zod": "^3.23.8"
+  }
+}

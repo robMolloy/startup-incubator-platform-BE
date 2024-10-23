@@ -1,0 +1,565 @@
+rules_version = '2';
+
+// firebase/firestore.rules:127 /users
+// firebase/firestore.rules:161 /profiles
+// firebase/firestore.rules:244 /projProfileLinks
+// firebase/firestore.rules:290 /organisation
+// firebase/firestore.rules:326 /orgUserLinks
+// firebase/firestore.rules:391 /projects
+// firebase/firestore.rules:445 /projUserLinks
+// firebase/firestore.rules:508 /directMessages
+
+function getIncomingAuth() {
+  return request.auth;
+}
+function isNow(dt) {
+  return dt is timestamp && dt == request.time;
+}
+function getIncomingData() {
+  return request.resource.data;
+}
+function getIncomingId() {
+  return request.resource.id;
+}
+function getExistingData() {
+  return resource.data;
+}
+function getParams() {
+  return resource.data;
+}
+
+service cloud.firestore {
+  match /databases/{database}/documents {  
+    match /{documents=**} {
+      allow read, write: if false;
+    }
+  
+    // function doesUserExist(uid){
+    //   return exists(/databases/$(database)/documents/users/$(uid))
+    // }
+
+    function getUserData(uid){
+      return get(/databases/$(database)/documents/users/$(uid)).data;
+    }
+    
+    function getOrganisationData(organisationId){
+      return get(/databases/$(database)/documents/organisations/$(organisationId)).data;
+    }
+    
+    function doesOrganisationExists(organisationId){
+      return exists(/databases/$(database)/documents/organisations/$(organisationId));
+    }
+    
+    function getOrgUserLinkData(orgUserLinkId){
+      return get(/databases/$(database)/documents/orgUserLinks/$(orgUserLinkId)).data;
+    }
+    
+    function doesOrgUserLinkExist(orgUserLinkId){
+      return exists(/databases/$(database)/documents/orgUserLinks/$(orgUserLinkId))
+    }
+    
+    function getProjectData(projectId){
+      return get(/databases/$(database)/documents/projects/$(projectId)).data;
+    }
+    
+    function doesProjectExists(projectId){
+      return exists(/databases/$(database)/documents/projects/$(projectId));
+    }
+    
+    function getProjUserLinkData(projUserLinkId){
+      return get(/databases/$(database)/documents/projUserLinks/$(projUserLinkId)).data;
+    }
+    
+    function doesProjUserLinkExist(projUserLinkId){
+      return exists(/databases/$(database)/documents/projUserLinks/$(projUserLinkId))
+    }
+    
+    function getProfileData(profileId){
+      return get(/databases/$(database)/documents/profiles/$(profileId)).data;
+    }
+    
+    function getProjProfileLinkData(projProfileLinkId){
+      return get(/databases/$(database)/documents/projProfileLinks/$(projProfileLinkId)).data;
+    }
+    
+    function doesProjProfileLinkExist(projProfileLinkId){
+      return exists(/databases/$(database)/documents/projProfileLinks/$(projProfileLinkId));
+    }
+    
+    function isOwnerOfOrgUserLink(orgUserLinkId){
+      let orgUserLink = getOrgUserLinkData(orgUserLinkId);
+      let auth = getIncomingAuth();
+      return auth.uid == orgUserLink.uid
+    }
+    
+    function isOrgAdminFromOrgUserLinkId(orgUserLinkId){
+      let orgUserLink = getOrgUserLinkData(orgUserLinkId);
+      let organisation = getOrganisationData(orgUserLink.organisationId);
+      let auth = getIncomingAuth();
+      return auth.uid in organisation.adminUids
+    }
+    
+    function isOrgAdminFromOrganisationId(organisationId){
+      let organisation = getOrganisationData(organisationId);
+      let auth = getIncomingAuth();
+      return auth.uid in organisation.adminUids
+    }
+    
+    function isOwnerOfProjUserLink(projUserLinkId){
+      let projUserLink = getProjUserLinkData(projUserLinkId);
+      let auth = getIncomingAuth();
+      return auth.uid == projUserLink.uid
+    }
+    
+    function isProjAdminFromProjUserLinkId(orgUserLinkId){
+      let orgUserLink = getOrgUserLinkData(orgUserLinkId);
+      let organisation = getOrganisationData(orgUserLink.organisationId);
+      let auth = getIncomingAuth();
+      return auth.uid in organisation.adminUids
+    }
+    
+    function isProjAdminFromProjectId(projectId){
+      let project = getProjectData(projectId);
+      let auth = getIncomingAuth();
+      return auth.uid in project.adminUids
+    }
+
+		match /users/{userId} {
+      function canCreateUser() {
+        let incoming = getIncomingData();
+        let incomingId = getIncomingId();
+        let auth = getIncomingAuth();
+        return incoming.keys().hasAll(['id', 'uid', 'email', 'userName', 'isAdmin', 'createdAt', 'updatedAt'])
+          && incoming.keys().hasOnly(['id', 'uid', 'email', 'userName', 'isAdmin', 'createdAt', 'updatedAt'])
+          && incoming.id == incomingId
+          && incoming.uid == incomingId
+          && auth.uid == incomingId
+          && incoming.email == auth.token.email
+          && incoming.userName is string
+          && incoming.userName.size() >=6
+          && incoming.isAdmin == false
+          && isNow(incoming.createdAt)
+          && isNow(incoming.updatedAt)
+      }
+
+      function canUpdateUser() {
+        let auth = getIncomingAuth();
+        let incoming = getIncomingData();
+        let existing = getExistingData();
+        let actionUserData = getUserData(auth.uid);
+        
+        return incoming.diff(existing).affectedKeys().hasOnly(['updatedAt', 'isAdmin'])
+          && isNow(incoming.updatedAt)
+          && actionUserData.isAdmin == true
+          && incoming.isAdmin in [true, false] 
+          && auth.uid != existing.uid // cannot demote/elevate yourself
+      }
+
+      allow read: if true;
+      allow create: if canCreateUser();
+      allow update: if canUpdateUser();
+    }
+
+		match /profiles/{profileId} {
+      function canGetProfile(profileId){
+        let profile = getProfileData(profileId);
+        let auth = getIncomingAuth();
+        return profile.uid == auth.uid
+      }
+
+      function canListProfiles(){
+        let params = getParams();
+        let projProfileLinkId = params.projProfileLinkIdReference.keys()[0];
+        let projProfileLink = getProjProfileLinkData(projProfileLinkId);
+        let project = getProjectData(projProfileLink.projectId);
+        let profile = getProfileData(projProfileLink.profileId);
+        let auth = getIncomingAuth();
+        let isProjUserLinkExists = doesProjUserLinkExist(projProfileLink.projectId + "_" + auth.uid);
+        let isProjProfileLinkExists = doesProjProfileLinkExist(projProfileLinkId);
+        
+        return 
+          ( auth.uid == params.uid) 
+          ||
+          ( auth.uid == profile.uid ) 
+          ||
+          ( true
+            && projProfileLink.approvalStatus == "approved"
+            && isProjUserLinkExists
+          )
+          ||
+          ( true
+            && isProjProfileLinkExists
+            && auth.uid in project.adminUids
+          ) 
+      }
+
+      function canCreateProfile(){
+        let incoming = getIncomingData();
+        let incomingId = getIncomingId();
+        let auth = getIncomingAuth();
+        
+        return incoming.keys().hasAll(['id', 'uid', 'title', 'description', 'projProfileLinkIdReference', 'createdAt', 'updatedAt'])
+          && incoming.keys().hasOnly(['id', 'uid', 'title', 'description', 'projProfileLinkIdReference', 'createdAt', 'updatedAt'])
+          && incoming.id is string
+          && incoming.id == incomingId
+          && incoming.uid == auth.uid
+          && incoming.title is string
+          && incoming.description is string
+          && incoming.projProfileLinkIdReference is map
+          && isNow(incoming.createdAt)
+          && isNow(incoming.updatedAt)
+      }
+
+      function canUpdateProfile(){
+        let incoming = getIncomingData();
+        let incomingId = getIncomingId();
+        let existing = getExistingData();
+        let auth = getIncomingAuth();
+        
+        return incoming.keys().hasAll(['id', 'uid', 'title', 'description', 'projProfileLinkIdReference', 'createdAt', 'updatedAt'])
+          && incoming.keys().hasOnly(['id', 'uid', 'title', 'description', 'projProfileLinkIdReference', 'createdAt', 'updatedAt'])
+          && incoming.id is string
+          && incoming.id == incomingId
+          && incoming.id == existing.id
+          && incoming.uid == auth.uid
+          && incoming.title is string
+          && incoming.description is string
+          && incoming.projProfileLinkIdReference is map
+          && incoming.createdAt == existing.createdAt
+          && isNow(incoming.updatedAt)
+      }
+
+      function canDeleteProfile(){
+        let existing = getExistingData();
+        let auth = getIncomingAuth();
+        return existing.uid == auth.uid
+      }
+
+
+      allow get: if canGetProfile(profileId);
+      allow list: if canListProfiles();
+      allow create: if canCreateProfile();
+      allow update: if canUpdateProfile();
+      allow delete: if canDeleteProfile();
+    }
+    
+		match /projProfileLinks/{projProfileLinkId} {
+      function canCreateProjProfileLink() {
+        let incoming = getIncomingData();
+        let auth = getIncomingAuth();
+        let project = getProjectData(incoming.projectId);
+        let profile = getProfileData(incoming.profileId);
+        let projUserLink = getProjUserLinkData(project.id + '_' + auth.uid);
+        return incoming.keys().hasAll(['id', 'projectId', 'profileId', 'approvalStatus', 'createdAt', 'updatedAt'])
+          && incoming.keys().hasOnly(['id', 'projectId', 'profileId', 'approvalStatus', 'createdAt', 'updatedAt'])
+          && getIncomingId() == incoming.projectId + '_' + incoming.profileId
+          && isNow(incoming.createdAt)
+          && isNow(incoming.updatedAt)
+          && (
+            incoming.approvalStatus == 'pending' && profile.uid == auth.uid
+            || 
+            incoming.approvalStatus in ['pending', 'approved', 'blocked'] && auth.uid in project.adminUids
+          )
+          && projUserLink.approvalStatus == 'approved'
+      }
+
+      function canUpdateProjProfileLink() {
+        let incoming = getIncomingData();
+        let existing = getExistingData();
+        let project = getProjectData(existing.projectId);
+        let auth = getIncomingAuth();
+        return incoming.diff(existing).affectedKeys().hasOnly(['approvalStatus', 'updatedAt'])
+          && incoming.approvalStatus in ['pending', 'approved', 'blocked']
+          && isNow(incoming.updatedAt)
+          && auth.uid in project.adminUids // is projAdmin
+      }
+      
+      function canDeleteProjProfileLink(projProfileLinkId) {
+        let auth = getIncomingAuth();
+        let projProfileLink = getProjProfileLinkData(projProfileLinkId);
+        let profile = getProfileData(projProfileLink.profileId);
+        let project = getProjectData(projProfileLink.projectId);
+        return profile.uid == auth.uid || auth.uid in project.adminUids
+      }
+
+      allow get: if true;
+      allow list: if true;
+      allow create: if canCreateProjProfileLink();
+      allow update: if canUpdateProjProfileLink();
+      allow delete: if canDeleteProjProfileLink(projProfileLinkId);
+    }
+
+		match /organisations/{organisationId} {
+      function canCreateOrganisation() {
+        let incoming = getIncomingData();
+        let auth = getIncomingAuth();
+        let actionUserData = getUserData(auth.uid);
+        return incoming.keys().hasAll(['id', 'organisationName', 'subtitle', 'description', 'imageUrl', 'imageUrls', 'adminUids', 'createdAt', 'updatedAt'])
+          && incoming.keys().hasOnly(['id', 'organisationName', 'subtitle', 'description', 'imageUrl', 'imageUrls', 'adminUids', 'createdAt', 'updatedAt'])
+          && getIncomingId() == incoming.id
+          && incoming.organisationName is string
+          && incoming.subtitle is string
+          && incoming.description is string
+          && incoming.imageUrl is string
+          && incoming.imageUrls is map
+          && incoming.adminUids == [auth.uid]
+          && isNow(incoming.createdAt)
+          && isNow(incoming.updatedAt)
+          && actionUserData.isAdmin == true
+      }
+
+      function canUpdateOrganisation() {
+        let auth = getIncomingAuth();
+        let incoming = getIncomingData();
+        let existing = getExistingData();
+        let isAdmin = auth.uid in existing.adminUids;
+        
+        return incoming.diff(existing).affectedKeys().hasOnly(['updatedAt', 'adminUids'])
+          && isNow(incoming.updatedAt)
+          && isAdmin
+          && auth.uid in incoming.adminUids // cannot demote yourself
+      }
+      
+      allow read: if true;
+      allow create: if canCreateOrganisation();
+      allow update: if canUpdateOrganisation();
+    }
+
+		match /orgUserLinks/{orgUserLinkId} {
+      function canGetOrgUserLink(orgUserLinkId) {
+        let auth = getIncomingAuth();
+        let params = getParams();
+        return params.uid == auth.uid
+          || isOwnerOfOrgUserLink(orgUserLinkId)
+          || isOrgAdminFromOrgUserLinkId(orgUserLinkId)
+      }
+      
+      function canListOrgUserLinks() {
+        let params = getParams();
+        let auth = getIncomingAuth();
+        let orgUserLinkId = params.organisationId + '_' + params.uid;
+        let myOrgUserLinkId = params.organisationId + '_' + auth.uid;
+        return params.uid == auth.uid
+          || isOrgAdminFromOrgUserLinkId(orgUserLinkId)
+          || isOrgAdminFromOrganisationId(params.organisationId)
+          || doesOrgUserLinkExist(myOrgUserLinkId)
+      }
+      
+      function canCreateOrgUserLink() {
+        let incoming = getIncomingData();
+        let auth = getIncomingAuth();
+        let incomingId = getIncomingId();
+        let incomingDataId = incoming.organisationId + '_' + incoming.uid;
+        let userData = getUserData(auth.uid);
+        return incoming.keys().hasAll(['id', 'uid', 'organisationId', 'approvalStatus', 'createdAt', 'updatedAt'])
+          && incoming.keys().hasOnly(['id', 'uid', 'organisationId', 'approvalStatus', 'createdAt', 'updatedAt'])
+          && incoming.uid == auth.uid
+          && incomingId == incomingDataId
+          && isNow(incoming.createdAt)
+          && isNow(incoming.updatedAt)
+          && doesOrganisationExists(incoming.organisationId)
+          && (
+            incoming.approvalStatus == "approved" && userData.isAdmin == true
+            || incoming.approvalStatus == "pending" 
+          )
+      }
+      
+      function canUpdateOrgUserLink() {
+        let incoming = getIncomingData();
+        let existing = getExistingData();
+        let organisation = getOrganisationData(existing.organisationId);
+        let auth = getIncomingAuth();
+        return incoming.diff(existing).affectedKeys().hasOnly(['approvalStatus', 'updatedAt'])
+          && incoming.approvalStatus in ['pending', 'approved', 'blocked']
+          && isNow(incoming.updatedAt)
+          && auth.uid in organisation.adminUids // is orgAdmin
+      }
+
+      function canDeleteOrgUserLink() {
+        let auth = getIncomingAuth();
+        let existing = getExistingData();
+        let organisation = getOrganisationData(existing.organisationId);
+        return auth.uid in organisation.adminUids 
+          && auth.uid != existing.uid // cannot delete your own orgUserLink
+      }
+      
+      allow get: if canGetOrgUserLink(orgUserLinkId);
+      allow list: if canListOrgUserLinks();
+      allow create: if canCreateOrgUserLink();
+      allow update: if canUpdateOrgUserLink();
+      allow delete: if canDeleteOrgUserLink();
+    }
+
+		match /projects/{projectId} {
+      function canGetProject(projectId) {
+        let project = getProjectData(projectId);
+        let auth = getIncomingAuth();
+        let orgUserLinkId = project.organisationId + '_' + auth.uid;
+        let orgUserLink = getOrgUserLinkData(orgUserLinkId);
+        return orgUserLink.approvalStatus == "approved" 
+      }
+      
+      function canListProjects() {
+        let params = getParams();
+        let auth = getIncomingAuth();
+        let orgUserLinkId = params.organisationId + '_' + auth.uid;
+        let orgUserLink = getOrgUserLinkData(orgUserLinkId);
+        return orgUserLink.approvalStatus == "approved" 
+      }
+      
+      function canCreateProject() {
+        let incoming = getIncomingData();
+        let auth = getIncomingAuth();
+        let id = getIncomingId();
+        let organisation = getOrganisationData(incoming.organisationId);
+        return incoming.keys().hasAll(['id', 'projectName', 'subtitle', 'imageUrl', 'imageUrls', 'description', 'organisationId', 'adminUids', 'createdAt', 'updatedAt'])
+          && incoming.keys().hasOnly(['id', 'projectName', 'subtitle', 'imageUrl', 'imageUrls', 'description', 'organisationId', 'adminUids', 'createdAt', 'updatedAt'])
+          && id == incoming.id
+          && incoming.projectName is string 
+          && incoming.subtitle is string
+          && incoming.imageUrl is string
+          && incoming.imageUrls is map 
+          && incoming.description is string
+          && id.split('_')[0] == incoming.organisationId
+          && auth.uid in organisation.adminUids
+          && doesOrganisationExists(incoming.organisationId)
+          && isNow(incoming.createdAt)
+          && isNow(incoming.updatedAt)
+      }
+
+      function canUpdateProject() {
+        let auth = getIncomingAuth();
+        let incoming = getIncomingData();
+        let existing = getExistingData();
+        
+        return incoming.diff(existing).affectedKeys().hasOnly(['updatedAt', 'adminUids'])
+          && isNow(incoming.updatedAt)
+          && auth.uid in existing.adminUids // is currently admin
+          && auth.uid in incoming.adminUids // cannot demote yourself
+      }
+      
+      allow get: if canGetProject(projectId);
+      allow list: if canListProjects();
+      allow create: if canCreateProject();
+      allow update: if canUpdateProject();
+    }
+		
+    match /projUserLinks/{projUserLinkId} {
+      function canGetProjUserLink(projUserLinkId) {
+        let auth = getIncomingAuth();
+        let params = getParams();
+        return params.uid == auth.uid
+          || isOwnerOfProjUserLink(projUserLinkId)
+          || isProjAdminFromProjUserLinkId(projUserLinkId)
+      }
+      
+      function canListProjUserLinks() {
+        let params = getParams();
+        let auth = getIncomingAuth();
+        let projUserLinkId = params.projectId + '_' + params.uid;
+        let myProjUserLinkId = params.projectId + '_' + auth.uid;
+        return params.uid == auth.uid
+          || isProjAdminFromProjUserLinkId(projUserLinkId)
+          || isProjAdminFromProjectId(params.projectId)
+          || doesProjUserLinkExist(myProjUserLinkId)
+      }
+      
+      function canCreateProjUserLink() {
+        let incoming = getIncomingData();
+        let auth = getIncomingAuth();
+        let project = getProjectData(incoming.projectId);
+        return incoming.keys().hasAll(['id', 'uid', 'projectId', 'approvalStatus', 'createdAt', 'updatedAt'])
+          && incoming.keys().hasOnly(['id', 'uid', 'projectId', 'approvalStatus', 'createdAt', 'updatedAt'])
+          && incoming.uid == auth.uid
+          && getIncomingId() == incoming.projectId + '_' + incoming.uid
+          && isNow(incoming.createdAt)
+          && isNow(incoming.updatedAt)
+          && (
+              incoming.approvalStatus == "approved" && auth.uid in project.adminUids
+            || incoming.approvalStatus == "pending"
+          )
+          && doesProjectExists(incoming.projectId)
+      }
+      
+      function canUpdateProjUserLink() {
+        let incoming = getIncomingData();
+        let existing = getExistingData();
+        let project = getProjectData(existing.projectId);
+        let auth = getIncomingAuth();
+        return incoming.diff(existing).affectedKeys().hasOnly(['approvalStatus', 'updatedAt'])
+          && incoming.approvalStatus in ['pending', 'approved', 'blocked']
+          && isNow(incoming.updatedAt)
+          && auth.uid in project.adminUids // is projAdmin
+      }
+
+      function canDeleteProjUserLink() {
+        let auth = getIncomingAuth();
+        let existing = getExistingData();
+        let project = getProjectData(existing.projectId);
+        return auth.uid in project.adminUids 
+          && auth.uid != existing.uid // cannot delete your own projUserLink
+      }
+
+      allow get: if canGetProjUserLink(projUserLinkId);
+      allow list: if canListProjUserLinks();
+      allow create: if canCreateProjUserLink();
+      allow update: if canUpdateProjUserLink();
+      allow delete: if canDeleteProjUserLink();
+    }
+		
+    match /directMessages/{directMessageId} {
+      allow get: if true;
+      allow list: if true;
+      allow create: if true;
+      allow update: if false;
+    }
+
+    match /appSettings/{appSettingsId} {
+      function canReadAppSettings() {
+        let auth = getIncomingAuth();
+        return auth.uid != null
+      }
+
+      function canCreateAppSettings() {
+        let incomingId = getIncomingId();
+        let incoming = getIncomingData();
+        let auth = getIncomingAuth();
+        let userData = getUserData(auth.uid);
+        return incoming.keys().hasAll(['id', 'welcomeLabel', 'organisationsLabel', 'profilesLabel', 'projectsLabel', 'usersLabel', 'createdAt', 'updatedAt'])
+          && incoming.keys().hasOnly(['id', 'welcomeLabel', 'organisationsLabel', 'profilesLabel', 'projectsLabel', 'usersLabel', 'createdAt', 'updatedAt'])
+          && incomingId == "unique"
+          && incomingId == incoming.id
+          && incoming.welcomeLabel is string
+          && incoming.organisationsLabel is string
+          && incoming.profilesLabel is string
+          && incoming.projectsLabel is string
+          && incoming.usersLabel is string
+          && isNow(incoming.createdAt)
+          && isNow(incoming.updatedAt)
+          && userData.isAdmin == true
+      }
+
+      function canUpdateAppSettings() {
+        let incomingId = getIncomingId();
+        let incoming = getIncomingData();
+        let existing = getExistingData();
+        let auth = getIncomingAuth();
+        let userData = getUserData(auth.uid);
+        return debug(incoming.diff(existing).affectedKeys()).hasOnly(['welcomeLabel', 'organisationsLabel', 'profilesLabel', 'projectsLabel', 'usersLabel', 'updatedAt'])
+          && incomingId == "unique"
+          && incoming.welcomeLabel is string
+          && incoming.organisationsLabel is string
+          && incoming.profilesLabel is string
+          && incoming.projectsLabel is string
+          && incoming.usersLabel is string
+          && isNow(incoming.updatedAt)
+          && userData.isAdmin == true
+      }
+      allow read: if canReadAppSettings();
+      allow create: if canCreateAppSettings();
+      allow update: if canUpdateAppSettings();
+      allow delete: if false;
+    }
+  }
+}
+
