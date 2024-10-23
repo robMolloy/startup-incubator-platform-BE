@@ -3,14 +3,16 @@
     "outDir": "lib",
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "paths": {
-      "@/*": ["../src/*"]
-    },
-    "module": "commonjs",
+    "noUncheckedIndexedAccess": true,
+    "noUnusedParameters": true,
     "noUnusedLocals": true,
+    "module": "commonjs",
     "sourceMap": true,
     "strict": true,
-    "target": "es2017"
+    "target": "es2017",
+    "paths": {
+      "@/*": ["../src/*"]
+    }
   },
   "compileOnSave": true,
   "include": ["src"]
