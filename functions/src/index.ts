@@ -7,13 +7,28 @@
  * See a full list of supported triggers at https://firebase.google.com/docs/functions
  */
 
-import { onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
+import { onCall } from "firebase-functions/v2/https";
+import { z } from "zod";
 
+const schema = z.object({ a: z.string() });
 // Start writing functions
 // https://firebase.google.com/docs/functions/typescript
 
-export const helloWorld = onRequest((_request, response) => {
-  logger.info("Hello logs!", { structuredData: true });
-  response.send("Hello from asd!");
+export const helloWorld = onCall((request) => {
+  const greetings = { hello: "Hello" };
+  logger.info(`${greetings.hello} logs!`, { structuredData: true });
+  return `${greetings.hello} from ${request.auth?.uid}!`;
+});
+
+export const passData = onCall((request) => {
+  const greetings = { hello: "Hello" };
+  logger.info(`${greetings.hello} logs!`, { structuredData: true });
+  const parsedResponse = schema.safeParse(request.data);
+
+  return `${greetings.hello} from ${parsedResponse.success ? "success" : "fail"}!`;
+});
+
+export const doesUserNameExist = onCall((request) => {
+  return { success: !!request.data.userName };
 });
