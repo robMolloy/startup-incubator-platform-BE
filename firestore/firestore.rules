@@ -1,13 +1,13 @@
 rules_version = '2';
 
-// firebase/firestore.rules:127 /users
-// firebase/firestore.rules:161 /profiles
-// firebase/firestore.rules:244 /projProfileLinks
-// firebase/firestore.rules:290 /organisation
-// firebase/firestore.rules:326 /orgUserLinks
-// firebase/firestore.rules:391 /projects
-// firebase/firestore.rules:445 /projUserLinks
-// firebase/firestore.rules:508 /directMessages
+// firestore/firestore.rules:127 /users
+// firestore/firestore.rules:161 /profiles
+// firestore/firestore.rules:244 /projProfileLinks
+// firestore/firestore.rules:290 /organisation
+// firestore/firestore.rules:326 /orgUserLinks
+// firestore/firestore.rules:391 /projects
+// firestore/firestore.rules:445 /projUserLinks
+// firestore/firestore.rules:508 /directMessages
 
 function getIncomingAuth() {
   return request.auth;
