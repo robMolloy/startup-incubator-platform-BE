@@ -1,13 +1,13 @@
 rules_version = '2';
 
-// firestore/firestore.rules:127 /users
-// firestore/firestore.rules:161 /profiles
-// firestore/firestore.rules:244 /projProfileLinks
-// firestore/firestore.rules:290 /organisation
-// firestore/firestore.rules:326 /orgUserLinks
-// firestore/firestore.rules:391 /projects
-// firestore/firestore.rules:445 /projUserLinks
-// firestore/firestore.rules:508 /directMessages
+// firestore/firestore.rules:127 match /users
+// firestore/firestore.rules:161 match /profiles
+// firestore/firestore.rules:244 match /projProfileLinks
+// firestore/firestore.rules:290 match /organisation
+// firestore/firestore.rules:326 match /orgUserLinks
+// firestore/firestore.rules:391 match /projects
+// firestore/firestore.rules:445 match /projUserLinks
+// firestore/firestore.rules:508 match /directMessages
 
 function getIncomingAuth() {
   return request.auth;
@@ -82,9 +82,9 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/projProfileLinks/$(projProfileLinkId)).data;
     }
     
-    function doesProjProfileLinkExist(projProfileLinkId){
-      return exists(/databases/$(database)/documents/projProfileLinks/$(projProfileLinkId));
-    }
+    // function doesProjProfileLinkExist(projProfileLinkId){
+    //   return exists(/databases/$(database)/documents/projProfileLinks/$(projProfileLinkId));
+    // }
     
     function isOwnerOfOrgUserLink(orgUserLinkId){
       let orgUserLink = getOrgUserLinkData(orgUserLinkId);
@@ -167,30 +167,50 @@ service cloud.firestore {
         return profile.uid == auth.uid
       }
 
-      function canListProfiles(){
+      function canListProfilesIfUserUidMatchesUidParam(){
+        let params = getParams();
+        let auth = getIncomingAuth();
+
+        return auth.uid == params.uid
+      }
+
+      function canListProfilesIfUserOwnsProfileConnectedToProjProfileLinkIdReferenceParam(){
+        let params = getParams();
+        let projProfileLinkId = params.projProfileLinkIdReference.keys()[0];
+        let projProfileLink = getProjProfileLinkData(projProfileLinkId);
+        let profile = getProfileData(projProfileLink.profileId);
+        let auth = getIncomingAuth();
+        
+        return auth.uid == profile.uid
+      }
+
+      function canListProfilesIfProjProfileLinkAndProjUserLinkConnectedToProjProfileLinkIdReferenceParamAreApproved(){
+        let params = getParams();
+        let projProfileLinkId = params.projProfileLinkIdReference.keys()[0];
+        let projProfileLink = getProjProfileLinkData(projProfileLinkId);
+        let auth = getIncomingAuth();
+        let projUserLink = getProjUserLinkData(projProfileLink.projectId + "_" + auth.uid);
+
+        return projProfileLink.approvalStatus == "approved" 
+          && projUserLink.approvalStatus == "approved" 
+      }
+
+      function canListProfilesIfUserIsAdminOfProjectConnectedToProjProfileLinkIdReferenceParam(){
         let params = getParams();
         let projProfileLinkId = params.projProfileLinkIdReference.keys()[0];
         let projProfileLink = getProjProfileLinkData(projProfileLinkId);
         let project = getProjectData(projProfileLink.projectId);
-        let profile = getProfileData(projProfileLink.profileId);
         let auth = getIncomingAuth();
-        let isProjUserLinkExists = doesProjUserLinkExist(projProfileLink.projectId + "_" + auth.uid);
-        let isProjProfileLinkExists = doesProjProfileLinkExist(projProfileLinkId);
-        
-        return 
-          ( auth.uid == params.uid) 
-          ||
-          ( auth.uid == profile.uid ) 
-          ||
-          ( true
-            && projProfileLink.approvalStatus == "approved"
-            && isProjUserLinkExists
-          )
-          ||
-          ( true
-            && isProjProfileLinkExists
-            && auth.uid in project.adminUids
-          ) 
+
+        return auth.uid in project.adminUids 
+      }
+
+
+      function canListProfiles(){
+        return canListProfilesIfUserUidMatchesUidParam()
+          || canListProfilesIfUserOwnsProfileConnectedToProjProfileLinkIdReferenceParam()
+          || canListProfilesIfProjProfileLinkAndProjUserLinkConnectedToProjProfileLinkIdReferenceParamAreApproved()
+          || canListProfilesIfUserIsAdminOfProjectConnectedToProjProfileLinkIdReferenceParam()
       }
 
       function canCreateProfile(){
